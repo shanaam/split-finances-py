@@ -1,0 +1,30 @@
+## How to split finances
+
+You need a CSV with columns: `Item`, `Payer`, `Amount`, `Involved`.  
+`Involved` should be a comma-separated list of people (quoted).
+
+Example CSV:
+```csv
+Item,Payer,Amount,Involved
+Coffee,Alice,5.00,"Alice,Bob,Carol"
+Dinner,Bob,30.00,"Bob,Alice"
+```
+
+Steps
+
+1. Clone this repo.
+2. Drop the CSV containing the payments into the `split_money` directory.
+3. In a terminal, navigate to the `split_money` directory:
+  ```bash
+  cd split_money
+  ```
+4. (If needed) create/activate a conda env and install requirements:
+  ```bash
+  conda create -n split-finances python=3.8
+  conda activate split-finances
+  pip install -r ../requirements.txt  # if requirements.txt exists
+  ```
+5. Run the script (replace `YOUR_CSV_NAME.csv` with your file):
+  ```bash
+  python ../split-finances.py YOUR_CSV_NAME.csv
+  ```
