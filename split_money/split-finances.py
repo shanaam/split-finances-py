@@ -64,7 +64,10 @@ def calculate_settlements(csv_path):
         else:
             involved = str(row['Involved']).split(", ")
 
-        amount = float(row['Amount'])
+        amount_str = str(row['Amount'])
+        # keep only digits and dots
+        clean = ''.join(ch for ch in amount_str if ch.isdigit() or ch == '.')
+        amount = float(clean) if clean else 0.0
 
         # Calculate the amount each person owes
         split_used = amount / len(involved)
@@ -89,10 +92,26 @@ def calculate_settlements(csv_path):
 
     # TODO: Use a csv for people covering others debts
     # transfer all of 'Suruthy''s money to 'Arabi'
-    if 'Suruthy' in balances and 'Arabi' in balances:
-        balances['Arabi'] += balances['Suruthy']
-        balances['Suruthy'] = 0
-        print(f"\nTransferring all of Suruthy's money to Arabi. New balances:")
+    transfer_from_to = {
+        'Suruthy': 'Arabi',
+    }
+
+    performed = []
+    for src, dst in transfer_from_to.items():
+        if src in balances:
+            # ensure destination exists in balances
+            if dst not in balances:
+                balances[dst] = 0.0
+            if balances[src] != 0:
+                balances[dst] += balances[src]
+                balances[src] = 0.0
+                performed.append((src, dst))
+
+    if performed:
+        print("\nApplied transfers:")
+        for src, dst in performed:
+            print(f"Transferred all of {src}'s balance to {dst}.")
+        print("\nNew balances:")
         for person, balance in balances.items():
             print(f"{person:<15}: $ {balance:.2f}")
 
