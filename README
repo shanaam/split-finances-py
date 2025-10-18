@@ -14,17 +14,15 @@ Steps
 
 1. Clone this repo.
 2. Drop the CSV containing the payments into the `split_money` directory.
-3. In a terminal, navigate to the `split_money` directory:
+3. In a terminal, navigate to this directory
+4. Create or activate a Python 3.11 virtual environment (using splitmoney-env)
+- 
   ```bash
-  cd split_money
+  conda activate base
+  python3.11 -m venv splitmoney-env
   ```
-4. (If needed) create/activate a conda env and install requirements:
+5. cd split_money
+5. Run: (replace `YOUR_CSV_NAME.csv` with your file):
   ```bash
-  conda create -n split-finances python=3.8
-  conda activate split-finances
-  pip install -r ../requirements.txt  # if requirements.txt exists
-  ```
-5. Run the script (replace `YOUR_CSV_NAME.csv` with your file):
-  ```bash
-  python ../split-finances.py YOUR_CSV_NAME.csv
+  python split-finances.py YOUR_CSV_NAME.csv
   ```
