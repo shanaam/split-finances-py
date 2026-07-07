@@ -1,28 +1,55 @@
 ## How to split finances
 
-You need a CSV with columns: `Item`, `Payer`, `Amount`, `Involved`.  
-`Involved` should be a comma-separated list of people (quoted).
+You need a CSV with columns: `Item`, `Payer`, `Amount`, `Involved`.
+
+- `Payer` — who paid. Use `Cash` to mean everyone paid equally.
+- `Amount` — the amount paid, e.g. `12.50`, `$12.50`, or `-5.00` for a refund.
+- `Involved` — comma-separated people sharing the expense (quoted). Leave
+  empty to mean everyone who appears anywhere in the input files.
 
 Example CSV:
 ```csv
 Item,Payer,Amount,Involved
-Coffee,Alice,5.00,"Alice,Bob,Carol"
-Dinner,Bob,30.00,"Bob,Alice"
+Coffee,Alice,5.00,"Alice, Bob, Carol"
+Dinner,Bob,30.00,"Bob, Alice"
 ```
 
-Steps
+## Repo layout
 
-1. Clone this repo.
-2. Drop the CSV containing the payments into the `split_money` directory.
-3. In a terminal, navigate to this directory
-4. Create or activate a Python 3.11 virtual environment (using splitmoney-env)
-- 
-  ```bash
-  conda activate base
-  python3.11 -m venv splitmoney-env
-  ```
-5. cd split_money
-5. Run: (replace `YOUR_CSV_NAME.csv` with your file):
-  ```bash
-  python split-finances.py YOUR_CSV_NAME.csv
-  ```
+- `payment-csvs/` — expense CSVs go here (contents gitignored)
+- `data/` — scoresheets and other local files (gitignored)
+- `split_money/split-finances.py` — the calculator
+
+## Usage
+
+```bash
+just split softball-season              # bare names resolve in payment-csvs/
+just split season1.csv season2.csv     # combine multiple CSVs into one split
+just split season1 --transfer "Alice:Bob"   # fold Alice's balance into Bob's
+```
+
+Or without just:
+```bash
+uv run split_money/split-finances.py softball-season
+```
+
+All math is done in integer cents, so balances always sum to exactly zero.
+
+## Setup (one-time, per machine)
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and
+[just](https://just.systems/man/en/packages.html):
+
+```powershell
+# Windows (also install Git for Windows if you don't have it)
+winget install --id=astral-sh.uv -e
+winget install --id=Casey.Just -e
+```
+```bash
+# macOS
+brew install uv just
+```
+
+Then clone this repo — that's it. `uv run` installs the pinned Python
+(`.python-version`) and locked dependencies (`uv.lock`) automatically on
+first use.

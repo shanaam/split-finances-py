@@ -1,0 +1,6 @@
+[project]
+name = "split-finances"
+version = "0.1.0"
+description = "Calculate and settle shared expenses from a CSV of transactions"
+requires-python = ">=3.11"
+dependencies = []
