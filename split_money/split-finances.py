@@ -6,28 +6,49 @@ Calculate and settle shared expenses from one or more CSV files.
 Usage:
     python split-finances.py CSV [CSV ...] [--transfer SRC:DST ...]
 
-Each CSV needs the columns (extra columns such as Item are ignored):
-    - Payer:    Who paid. Use "Cash" to mean everyone paid equally.
-    - Amount:   The amount paid, e.g. 12.50, $12.50, or -5.00 for a refund.
-    - Involved: Comma-separated people sharing the expense. Leave empty to
-                mean everyone who appears anywhere in the input files.
+Each CSV has the columns (Group and Weight are optional):
 
-Bare filenames are also looked up in the payment-csvs/ directory, so
+    - Group:    Links rows that make up one shared cost. Rows with the same
+                Group are pooled: the money they contribute is split across
+                the shares they contribute. Leave blank for a standalone
+                one-row expense.
+    - Item:     Free-text label (ignored by the math).
+    - Payer:    Who put money in. Use "Cash" to mean everyone paid equally.
+    - Amount:   The amount paid, e.g. 12.50, $12.50, or -5.00 for a refund.
+    - Involved: Comma-separated people sharing this row's cost. "All" (or
+                "Everyone") expands to the whole roster. Blank on a row that
+                only contributes money is fine.
+    - Weight:   How much each listed person's share counts (default 1). Use
+                2 for e.g. a doubleheader that should count double.
+
+Every row contributes money (if it has Payer + Amount) and/or shares (if it
+has Involved) to its group -- blanks simply contribute nothing on that axis.
+Within a group the pooled money is divided in proportion to shares, so:
+
+    person's cost = (their share weight / group's total weight) x pooled money
+
+A standalone expense (blank Group) is just a one-row group: Payer paid Amount,
+split equally among Involved -- so the simple case stays a single line.
+
+Bare filenames are looked up in the payment-csvs/ directory, so
 `split-finances.py softball-season` works from anywhere in the repo.
 
-All math is done in integer cents: every expense is split into shares that
-sum exactly to the amount paid (leftover pennies go to the people listed
-first), so the final balances always sum to exactly zero.
+All math is done in integer cents (leftover pennies go to the largest
+fractional shares), so the final balances always sum to exactly zero.
 """
 
 import argparse
 import csv
+import math
 import sys
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 PAYMENT_CSV_DIR = Path(__file__).resolve().parent.parent / "payment-csvs"
 CASH = "cash"
+EVERYONE_TOKENS = {"all", "everyone"}
+REQUIRED_COLUMNS = {"Payer", "Amount", "Involved"}
 
 # ANSI styling, only when printing to a real terminal
 if sys.stdout.isatty():
@@ -47,10 +68,10 @@ def resolve_csv_path(name: str) -> Path:
     sys.exit(f"Error: could not find '{name}' (also looked in {PAYMENT_CSV_DIR}).")
 
 
-def split_names(field: str | None) -> list[str]:
-    """Split a comma-separated name list, tolerating missing spaces. Cash is not a person."""
-    names = [name.strip() for name in (field or "").split(",")]
-    return [name for name in names if name and name.lower() != CASH]
+def split_names(field_value: str | None) -> list[str]:
+    """Split a comma-separated name list, tolerating missing spaces."""
+    names = [name.strip() for name in (field_value or "").split(",")]
+    return [name for name in names if name]
 
 
 def parse_amount_cents(raw: str | None, context: str) -> int:
@@ -64,51 +85,118 @@ def parse_amount_cents(raw: str | None, context: str) -> int:
     return -cents if negative else cents
 
 
-def split_cents(amount: int, people: list[str], start: int = 0) -> list[int]:
-    """Shares that sum exactly to amount. Leftover pennies go to the people at
-    positions start, start+1, ... so callers can rotate who absorbs them."""
-    n = len(people)
-    base, extra = divmod(amount, n)
-    return [base + (1 if (i - start) % n < extra else 0) for i in range(n)]
+def apportion(amount: int, weights: list[float]) -> list[int]:
+    """Split amount (cents) into integer parts proportional to weights, summing
+    exactly to amount. Leftover pennies go to the largest fractional parts."""
+    n = len(weights)
+    total = sum(weights)
+    if n == 0 or total <= 0:
+        return [0] * n
+    sign = -1 if amount < 0 else 1
+    magnitude = abs(amount)
+    exact = [magnitude * w / total for w in weights]
+    parts = [math.floor(e) for e in exact]
+    leftover = magnitude - sum(parts)
+    order = sorted(range(n), key=lambda i: (exact[i] - parts[i], -i), reverse=True)
+    for i in order[:leftover]:
+        parts[i] += 1
+    return [sign * p for p in parts]
 
 
-def read_transactions(paths: list[Path]) -> list[tuple[str, int, dict]]:
+@dataclass
+class Group:
+    """A pool of money split across a pool of weighted shares."""
+    money_by_payer: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    cash: int = 0  # money paid by "Cash" (credited to everyone equally)
+    share_weight: dict[str, float] = field(default_factory=lambda: defaultdict(float))
+
+    @property
+    def pot(self) -> int:
+        return self.cash + sum(self.money_by_payer.values())
+
+
+def read_rows(paths: list[Path]) -> list[tuple[str, int, dict]]:
     """Return (filename, line number, row) for every row across all files."""
-    transactions = []
+    rows = []
     for path in paths:
         with open(path, newline="", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
-            missing = {"Payer", "Amount", "Involved"} - set(reader.fieldnames or [])
+            missing = REQUIRED_COLUMNS - set(reader.fieldnames or [])
             if missing:
                 sys.exit(f"Error: {path.name} is missing column(s): {', '.join(sorted(missing))}.")
             for line, row in enumerate(reader, start=2):
-                transactions.append((path.name, line, row))
-    return transactions
+                rows.append((path.name, line, row))
+    return rows
 
 
-def calculate_balances(transactions: list[tuple[str, int, dict]]) -> dict[str, int]:
-    """Net balance in cents per person: positive = overpaid, negative = underpaid."""
-    everyone = sorted(
-        {name for _, _, row in transactions for name in split_names(row["Involved"])}
-        | {name for _, _, row in transactions for name in split_names(row["Payer"])}
+def build_groups(rows: list[tuple[str, int, dict]]) -> tuple[dict, list[str]]:
+    """Group rows and return (groups, roster). Roster = every named participant."""
+    roster = sorted(
+        {
+            name
+            for _, _, row in rows
+            for name in split_names(row["Involved"]) + split_names(row["Payer"])
+            if name.lower() not in EVERYONE_TOKENS | {CASH}
+        }
     )
 
-    balances: dict[str, int] = defaultdict(int)
-    for index, (filename, line, row) in enumerate(transactions):
-        context = f"{filename} line {line}"
-        payer = (row["Payer"] or "").strip()
-        if not payer:
-            sys.exit(f"Error: missing Payer ({context}).")
-        payers = everyone if payer.lower() == CASH else [payer]
-        involved = split_names(row["Involved"]) or everyone
-        amount = parse_amount_cents(row["Amount"], context)
+    def expand(names: list[str]) -> set[str]:
+        out: set[str] = set()
+        for name in names:
+            out.update(roster if name.lower() in EVERYONE_TOKENS else [name])
+        return out
 
-        # rotate penny absorption by row so no one person collects them all
-        for person, share in zip(involved, split_cents(amount, involved, start=index)):
+    groups: dict[object, Group] = defaultdict(Group)
+    for filename, line, row in rows:
+        context = f"{filename} line {line}"
+        # blank Group -> a unique key so the row is its own standalone group
+        key = row.get("Group", "").strip() or ("__row__", filename, line)
+        group = groups[key]
+
+        payer = (row["Payer"] or "").strip()
+        amount_raw = (row["Amount"] or "").strip()
+        if bool(payer) != bool(amount_raw):
+            sys.exit(f"Error: Payer and Amount must be given together ({context}).")
+        if payer:
+            amount = parse_amount_cents(amount_raw, context)
+            if payer.lower() == CASH:
+                group.cash += amount
+            else:
+                group.money_by_payer[payer] += amount
+
+        try:
+            weight = float(row.get("Weight", "") or 1)
+        except ValueError:
+            sys.exit(f"Error: could not parse Weight {row.get('Weight')!r} ({context}).")
+        for person in expand(split_names(row["Involved"])):
+            group.share_weight[person] += weight
+
+    return groups, roster
+
+
+def calculate_balances(groups: dict, roster: list[str]) -> dict[str, int]:
+    """Net balance in cents per person: positive = overpaid, negative = underpaid."""
+    balances: dict[str, int] = defaultdict(int)
+    for group in groups.values():
+        # Credit whoever put money in.
+        for payer, amount in group.money_by_payer.items():
+            balances[payer] += amount
+        if group.cash:
+            for person, share in zip(roster, apportion(group.cash, [1.0] * len(roster))):
+                balances[person] += share
+
+        # Debit the shares. With no shares listed, the pot falls on everyone.
+        if group.share_weight:
+            people = sorted(group.share_weight)
+            weights = [group.share_weight[p] for p in people]
+        elif group.pot:
+            people, weights = roster, [1.0] * len(roster)
+        else:
+            continue
+        for person, share in zip(people, apportion(group.pot, weights)):
             balances[person] -= share
-        for person, share in zip(payers, split_cents(amount, payers)):
-            balances[person] += share
-    return balances
+
+    return dict(balances)
 
 
 def apply_transfers(balances: dict[str, int], transfers: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -156,7 +244,7 @@ def print_report(
 
     print()
     for filename, count in sources:
-        print(f" {DIM}Loaded {count} expense{'s' if count != 1 else ''} from {filename}{RESET}")
+        print(f" {DIM}Loaded {count} row{'s' if count != 1 else ''} from {filename}{RESET}")
     for src, dst in applied_transfers:
         print(f" {DIM}Moved {src}'s balance onto {dst}{RESET}")
 
@@ -204,14 +292,17 @@ def main() -> None:
         transfers.append((src.strip(), dst.strip()))
 
     paths = [resolve_csv_path(name) for name in args.csvs]
-    transactions = read_transactions(paths)
-    if not transactions:
-        sys.exit("Error: no transactions found.")
+    rows = read_rows(paths)
+    if not rows:
+        sys.exit("Error: no rows found.")
 
-    balances = calculate_balances(transactions)
+    groups, roster = build_groups(rows)
+    balances = calculate_balances(groups, roster)
+    if not balances:
+        sys.exit("Error: nothing to split (no money and no participants found).")
     applied = apply_transfers(balances, transfers)
     plan = settlement_plan(balances)
-    sources = [(path.name, sum(1 for name, _, _ in transactions if name == path.name)) for path in paths]
+    sources = [(path.name, sum(1 for name, _, _ in rows if name == path.name)) for path in paths]
     print_report(balances, plan, applied, sources)
 
 

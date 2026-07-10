@@ -1,18 +1,48 @@
 ## How to split finances
 
-You need a CSV with columns: `Item`, `Payer`, `Amount`, `Involved`.
+You need a CSV with columns `Group`, `Item`, `Payer`, `Amount`, `Involved`
+(and an optional `Weight`).
 
-- `Payer` — who paid. Use `Cash` to mean everyone paid equally.
+- `Group` — links rows that make up one shared cost (see below). Leave blank
+  for a standalone one-row expense.
+- `Item` — free-text label, ignored by the math.
+- `Payer` — who put money in. Use `Cash` to mean everyone paid equally.
 - `Amount` — the amount paid, e.g. `12.50`, `$12.50`, or `-5.00` for a refund.
-- `Involved` — comma-separated people sharing the expense (quoted). Leave
-  empty to mean everyone who appears anywhere in the input files.
+- `Involved` — comma-separated people sharing this row's cost (quoted).
+  `All` (or `Everyone`) expands to the whole roster. Leave blank to mean
+  everyone, or on a row that only contributes money.
+- `Weight` — how much each listed person's share counts (default 1).
 
-Example CSV:
-```csv
-Item,Payer,Amount,Involved
-Coffee,Alice,5.00,"Alice, Bob, Carol"
-Dinner,Bob,30.00,"Bob, Alice"
+Every row contributes **money** (if it has a Payer + Amount) and/or **shares**
+(if it has Involved) to its group. Within a group the pooled money is divided
+in proportion to shares:
+
 ```
+person's cost = (their share weight ÷ group's total weight) × pooled money
+```
+
+### Simple expenses — one row each, blank Group
+
+```csv
+Group,Item,Payer,Amount,Involved
+,Coffee,Alice,5.00,"Alice, Bob, Carol"
+,Dinner,Bob,30.00,"Bob, Alice"
+```
+
+### One payment, split by participation — same Group
+
+Put the money on one row and the participation on the rest. No need to work
+out each row's dollar amount — cost follows how often each person appears:
+
+```csv
+Group,Item,Payer,Amount,Involved
+season,Season fee,Tysan,670.20,
+season,Game 1,,,"Cabill, Tysan, Amy"
+season,Game 2,,,"Cabill, Tysan"
+```
+
+Here Tysan's $670.20 is split across all 5 game-attendances, so Cabill/Tysan
+(2 games) each owe twice what Amy (1 game) owes.
 
 ## Repo layout
 
@@ -33,7 +63,8 @@ Or without just:
 uv run split_money/split-finances.py softball-season
 ```
 
-All math is done in integer cents, so balances always sum to exactly zero.
+All math is done in integer cents (leftover pennies go to the largest
+fractional shares), so balances always sum to exactly zero.
 
 ## Setup (one-time, per machine)
 

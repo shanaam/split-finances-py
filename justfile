@@ -8,4 +8,4 @@ default:
 
 # Split expenses from one or more CSVs (bare names resolve in payment-csvs/)
 split +csvs:
-    uv run split_money/split-finances.py "$@"
+    @uv run split_money/split-finances.py "$@"
