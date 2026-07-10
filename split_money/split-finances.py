@@ -61,7 +61,7 @@ def resolve_csv_path(name: str) -> Path:
     """Accept a real path, or fall back to payment-csvs/<name>[.csv]."""
     candidates = [Path(name), PAYMENT_CSV_DIR / name]
     if not name.lower().endswith(".csv"):
-        candidates.append(PAYMENT_CSV_DIR / f"{name}.csv")
+        candidates += [Path(f"{name}.csv"), PAYMENT_CSV_DIR / f"{name}.csv"]
     for candidate in candidates:
         if candidate.is_file():
             return candidate

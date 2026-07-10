@@ -46,7 +46,8 @@ Here Tysan's $670.20 is split across all 5 game-attendances, so Cabill/Tysan
 
 ## Repo layout
 
-- `payment-csvs/` — expense CSVs go here (contents gitignored)
+- `payment-csvs/` — your own expense CSVs go here (contents gitignored)
+- `examples/` — worked examples you can run as-is (committed)
 - `data/` — scoresheets and other local files (gitignored)
 - `split_money/split-finances.py` — the calculator
 
@@ -65,6 +66,72 @@ uv run split_money/split-finances.py softball-season
 
 All math is done in integer cents (leftover pennies go to the largest
 fractional shares), so balances always sum to exactly zero.
+
+## Examples
+
+Two ready-to-run files live in `examples/`. Try them straight away:
+
+### 1. A weekend trip — per-item splits with different payers
+
+[`examples/weekend-trip.csv`](examples/weekend-trip.csv) — five separate
+expenses (blank `Group`), each paid by a different person and split among a
+different set. Groceries/cabin/gas are split four ways, the kayak only between
+Carol and Dave, and the wine uses `All` to mean the whole group.
+
+```bash
+just split examples/weekend-trip
+```
+
+Bob fronted the cabin, so everyone owes him:
+
+```
+ Bob    +$197.00
+ Alice   -$11.00
+ Carol   -$85.50
+ Dave   -$100.50
+```
+
+**Settling as couples — `--transfer`.** `--transfer SRC:DST` folds SRC's
+balance into DST, handy when two people settle as one. Pass it more than once
+for several couples — say Alice & Bob are a couple and so are Carol & Dave:
+
+```bash
+just split examples/weekend-trip --transfer "Alice:Bob" --transfer "Carol:Dave"
+```
+
+Alice's −$11 merges into Bob and Carol's −$85.50 into Dave, collapsing four
+balances and three payments down to one:
+
+```
+ Bob   +$186.00
+ Dave  -$186.00
+ → Dave pays Bob $186.00
+```
+
+(Transfers apply in order, so they also chain: `--transfer "A:B" --transfer
+"B:C"` moves A onto B, then that combined balance onto C.)
+
+### 2. A team season — one pot, split by attendance
+
+[`examples/team-season.csv`](examples/team-season.csv) — a $540 league fee
+**split by two co-payers** (Alice and Bob put in $270 each, as two money rows
+in the same `Group`) and divided across the weeks people actually showed up.
+The playoff row carries `Weight` 2, so it counts double.
+
+```bash
+just split examples/team-season
+```
+
+Alice and Bob get credited what they paid and then charged their own
+attendance, netting out positive; the rest owe by weeks played:
+
+```
+ Bob    +$176.08
+ Alice  +$152.61
+ Dave    -$93.91
+ Carol  -$117.39
+ Erin   -$117.39
+```
 
 ## Setup (one-time, per machine)
 

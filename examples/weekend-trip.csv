@@ -1,0 +1,6 @@
+Group,Item,Payer,Amount,Involved
+,Groceries,Alice,84.00,"Alice, Bob, Carol, Dave"
+,Cabin,Bob,320.00,"Alice, Bob, Carol, Dave"
+,Gas,Carol,60.00,"Alice, Bob, Carol, Dave"
+,Kayak rental,Dave,45.00,"Carol, Dave"
+,Wine,Alice,28.00,All

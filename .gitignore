@@ -176,6 +176,8 @@ cython_debug/
 
 # Any csv files
 *.csv
+# ...but keep the committed example CSVs
+!examples/*.csv
 
 # Local data (scoresheets, receipts, exports, ...)
 data/

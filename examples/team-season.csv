@@ -1,0 +1,7 @@
+Group,Item,Payer,Amount,Involved,Weight
+season,League fee (Alice's half),Alice,270.00,,
+season,League fee (Bob's half),Bob,270.00,,
+season,Week 1,,,"Alice, Bob, Carol, Dave, Erin",
+season,Week 2,,,"Alice, Bob, Carol, Erin",
+season,Week 3,,,"Alice, Carol, Dave, Erin",
+season,Playoff (counts double),,,"Alice, Bob, Carol, Dave, Erin",2
